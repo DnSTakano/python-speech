@@ -46,6 +46,8 @@ from google.cloud import speech
 import pyaudio
 from six.moves import queue
 
+from icon import GuiIcon
+
 # Audio recording parameters
 STREAMING_LIMIT = 240000  # 4 minutes
 SAMPLE_RATE = 16000
@@ -75,6 +77,33 @@ CABLE OutputをRealtekで聴くと、イヤホンでは聴ける。PCのスピ�
 これはおそらくPC依存realtek依存。asusではpcのスピーカーで開発していた。(まだvbcableではないかも。たしかステレオミキサー機能がこちらのrealtekには有ったから)
 realtek依存は大きく怖い。
 ゼンハイザーマイクでzoomに英語を録音して、CABLE Inputを出力先に選び、CABLE Outputをアプリに入れて認識させつつ、CABLE Outputをゼンハイザーで聴くことは成功!
+"""
+"""
+_summary_
+pyinstallerを実行するがそのままでは成功しなかった
+cd ./samples/microphone/
+pyinstaller transcribe_streaming_infinite.py --onefile --noconsole --icon=images/ico.ico
+失敗
+pkg_resources.DistributionNotFound: The 'google-cloud-core' distribution was not found and is required by the application
+解決方法
+https://qiita.com/hatt_takumi/items/afb5164326a2eb6f6259
+$ pip list | grep google
+google-api-core           2.4.0
+google-auth               2.3.3
+google-auth-oauthlib      0.4.1
+google-cloud-speech       2.11.1
+google-pasta              0.2.0
+googleapis-common-protos  1.54.0
+が以前の状態
+pip install google-cloud-core
+を実行
+google-cloud-core         2.3.1
+もう一度
+pyinstaller transcribe_streaming_infinite.py --onefile --noconsole --icon=images/ico.ico
+exe生成は成功する。しかしqiitaの情報通り、実行してgoogle speechを使うと止まる。
+情報通り hooks/hook-grpc.pyを作成しコピペ
+pyinstaller transcribe_streaming_infinite.py --onefile --noconsole --icon=images/ico.ico --additional-hooks-dir=./hooks/
+成功
 """
 translator = deepl.Translator("YOUR_DEEPL_API_KEY")
 
@@ -260,7 +289,7 @@ class Tk():
     def __init__(self):
         # 画面初期化
         self.root = tk.Tk()
-        self.root.geometry("640x640")
+        self.root.geometry("640x660")
         self.root.protocol("WM_DELETE_WINDOW", self._force_exit)
         self.force_exit_flg = False  # thread実行中に[x]停止した時の終了処理を行うためのフラグ。このようにグローバル変数(のような)をthreadに渡すことができ、start()後でも更新がかかる。しかしdaemon=Trueでメインと同時にサブも殺しているので、上のフラグは使っていないことになる。
         self.Process = None  # thread実行する前段階で[x]で終了した場合のためのダミー初期化
@@ -409,6 +438,25 @@ class Tk():
 
         self.curr_transcript = ""
         self._search_audio_device(None)
+
+        # アイコンおよびボタン画像宣言
+        guiicon = GuiIcon()
+        self.icoimg = tk.PhotoImage(data=guiicon.data)
+        self.root.tk.call('wm', 'iconphoto', self.root._w, self.icoimg)
+        self.img_start = tk.PhotoImage(data=guiicon.start_image_data)  # 240/30=8
+        self.img_break = tk.PhotoImage(data=guiicon.break_image_data)
+        self.img_pause = tk.PhotoImage(data=guiicon.pause_image_data)
+        self.img_refresh = tk.PhotoImage(data=guiicon.refresh_image_data)
+        self.img_restart = tk.PhotoImage(data=guiicon.restart_image_data)
+        self.img_search = tk.PhotoImage(data=guiicon.search_image_data)
+        self.img_trans = tk.PhotoImage(data=guiicon.trans_image_data)
+        self.img_start = self.img_start.subsample(8, 8)
+        self.img_break = self.img_break.subsample(8, 8)
+        self.img_pause = self.img_pause.subsample(8, 8)
+        self.img_refresh = self.img_refresh.subsample(8, 8)
+        self.img_restart = self.img_restart.subsample(8, 8)
+        self.img_search = self.img_search.subsample(12, 12)
+        self.img_trans = self.img_trans.subsample(12, 12)
 
     def _search_audio_device(self, event=None):
         # searchが二度目移行ならば、audio_devide_dictとaudio_devicesはクリアする
@@ -757,6 +805,7 @@ class Tk():
         tk.Label(self.root, text="").grid(row=1, column=2)
         tk.Label(self.root, text="").grid(row=2)
         tk.Label(self.root, text="").grid(row=3)
+        tk.Label(self.root, text="").grid(row=4)
 
         # Google speech の言語選択オプションメニュー表示
         self.gs_lng_opt.place(x=(WW-(2*OW))/3, y=SH, width=OW, height=BH)
@@ -765,61 +814,61 @@ class Tk():
         self.deepl_lng_opt.place(x=(2*(WW-(2*OW))/3)+OW, y=SH, width=OW, height=BH)
 
         # メインループ開始ボタン初期化
-        self.btn_start = tk.Button(text="Start")
+        self.btn_start = tk.Button(text="Start", image=self.img_start, compound="top")
         self.btn_start.bind(self.click, self._start)
         # メインループ開始ボタン表示
-        self.btn_start.place(x=SP, y=SH+BH+SH, width=BW, height=BH)
+        self.btn_start.place(x=SP, y=SH+BH+SH, width=BW, height=2*BH)
 
         # 句読点ボタン初期化 my_break
-        self.btn_comma = tk.Button(text="Break")
+        self.btn_comma = tk.Button(text="Break", image=self.img_break, compound="top")
         self.btn_comma.bind(self.click, self._comma)
         # 句読点ボタン表示
-        self.btn_comma.place(x=SP+BW, y=SH+BH+SH, width=BW, height=BH)
+        self.btn_comma.place(x=SP+BW, y=SH+BH+SH, width=BW, height=2*BH)
 
         # 一時停止ボタン初期化 my_pause
         self.btn_str_pause = tk.StringVar()
         self.btn_str_pause.set("Pause")
-        self.btn_pause = tk.Button(textvariable=self.btn_str_pause)
+        self.btn_pause = tk.Button(textvariable=self.btn_str_pause, image=self.img_pause, compound="top")
         self.btn_pause.bind(self.click, self._pause)
         # 一時停止ボタン表示
-        self.btn_pause.place(x=SP+2*BW, y=SH+BH+SH, width=BW, height=BH)
+        self.btn_pause.place(x=SP+2*BW, y=SH+BH+SH, width=BW, height=2*BH)
 
         # リフレッシュボタン初期化
-        self.btn_refresh = tk.Button(text="Refresh")
+        self.btn_refresh = tk.Button(text="Refresh", image=self.img_refresh, compound="top")
         self.btn_refresh.bind(self.click, self._refresh)
         # リフレッシュボタン表示
-        self.btn_refresh.place(x=SP+3*BW, y=SH+BH+SH, width=BW, height=BH)
+        self.btn_refresh.place(x=SP+3*BW, y=SH+BH+SH, width=BW, height=2*BH)
 
         # リフレッシュ2ボタン初期化
-        self.btn_refresh2 = tk.Button(text="Restart")
+        self.btn_refresh2 = tk.Button(text="Restart", image=self.img_restart, compound="top")
         self.btn_refresh2.bind(self.click, self._restart)
         # リフレッシュ2ボタン表示
-        self.btn_refresh2.place(x=SP+4*BW, y=SH+BH+SH, width=BW, height=BH)
+        self.btn_refresh2.place(x=SP+4*BW, y=SH+BH+SH, width=BW, height=2*BH)
 
         # スクロールバー1表示
-        self.frame1.grid(row=4, column=0, columnspan=3, padx=10, pady=2, sticky=(tk.W + tk.E))  # columnspanはこれまで使用したどのcolumnより大きいこと。(0始まりであることに注意.8なら9ということ)
-        self.txt1.grid(row=4, column=0, columnspan=3, padx=10, pady=2, sticky=(tk.W + tk.E))
-        self.scrollbar1.grid(row=4, column=4, columnspan=1, padx=10, pady=2, sticky=(tk.N + tk.S + tk.E))  # このcolumnはcolunmspan+1でないと、textの右端がかぶってしまう
+        self.frame1.grid(row=5, column=0, columnspan=3, padx=10, pady=2, sticky=(tk.W + tk.E))  # columnspanはこれまで使用したどのcolumnより大きいこと。(0始まりであることに注意.8なら9ということ)
+        self.txt1.grid(row=5, column=0, columnspan=3, padx=10, pady=2, sticky=(tk.W + tk.E))
+        self.scrollbar1.grid(row=5, column=4, columnspan=1, padx=10, pady=2, sticky=(tk.N + tk.S + tk.E))  # このcolumnはcolunmspan+1でないと、textの右端がかぶってしまう
         # スクロールバー2表示
-        self.frame2.grid(row=5, column=0, columnspan=3, padx=10, pady=2, sticky=(tk.W + tk.E))
-        self.txt2.grid(row=5, column=0, columnspan=3, padx=10, pady=2, sticky=(tk.W + tk.E))
-        self.scrollbar2.grid(row=5, column=4, columnspan=1, padx=10, pady=2, sticky=(tk.N + tk.S + tk.E))
+        self.frame2.grid(row=6, column=0, columnspan=3, padx=10, pady=2, sticky=(tk.W + tk.E))
+        self.txt2.grid(row=6, column=0, columnspan=3, padx=10, pady=2, sticky=(tk.W + tk.E))
+        self.scrollbar2.grid(row=6, column=4, columnspan=1, padx=10, pady=2, sticky=(tk.N + tk.S + tk.E))
         # スクロールバー3表示
-        self.frame3.grid(row=6, column=0, columnspan=3, padx=10, pady=2, sticky=(tk.W + tk.E))
-        self.txt3.grid(row=6, column=0, columnspan=3, padx=10, pady=2, sticky=(tk.W + tk.E))
-        self.scrollbar3.grid(row=6, column=4, columnspan=1, padx=10, pady=2, sticky=(tk.N + tk.S + tk.E))
+        self.frame3.grid(row=7, column=0, columnspan=3, padx=10, pady=2, sticky=(tk.W + tk.E))
+        self.txt3.grid(row=7, column=0, columnspan=3, padx=10, pady=2, sticky=(tk.W + tk.E))
+        self.scrollbar3.grid(row=7, column=4, columnspan=1, padx=10, pady=2, sticky=(tk.N + tk.S + tk.E))
 
         # DeepL web ボタン初期化
-        self.btn_dpl = tk.Button(text="DeepL web")
+        self.btn_dpl = tk.Button(text="DeepL web", image=self.img_search, compound="top")
         self.btn_dpl.bind(self.click, self._open_deepl)
         # DeepL web ボタン配置
-        self.btn_dpl.place(x=BW, y=580, width=2*BW, height=BH)
+        self.btn_dpl.place(x=BW, y=597, width=2*BW, height=1.3*BH)
 
         # 画面を透過させるボタン初期化
-        self.btn_tls = tk.Button(text="Translucent")
+        self.btn_tls = tk.Button(text="Translucent", image=self.img_trans, compound="top")
         self.btn_tls.bind(self.click, self._translucent)
         # 画面を透過させるボタン配置
-        self.btn_tls.place(x=BW+(2*BW)+(BW/2), y=580, width=2*BW, height=BH)
+        self.btn_tls.place(x=BW+(2*BW)+(BW/2), y=597, width=2*BW, height=1.3*BH)
 
         # メニューバー
         menubar = tk.Menu()
