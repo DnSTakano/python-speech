@@ -41,6 +41,7 @@ from tkinter import filedialog, simpledialog
 import threading as th
 import subprocess
 import webbrowser
+import yaml
 
 from google.cloud import speech
 import pyaudio
@@ -296,8 +297,25 @@ class Tk():
         self.is_translucented = False
         self.click = "<Button-1>"
 
+        # アプリログファイルapplogがある場合、API keyとファイルパスを復活する
+        if os.path.exists("applog.yaml"):
+            with open("applog.yaml", "r") as yf:
+                self.logdict = yaml.safe_load(yf)
+                print("resume from applog.yaml", self.logdict)
+                os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = self.logdict["gs_api_key_filepath"]
+        else:
+            # 初期値
+            self.logdict = {
+                "DEEPL_API_KEY": None,
+                "gs_api_key_filepath": None,
+                "device_index": None,
+            }
+
         # DeepLインスタンス化
-        self.DEEPL_API_KEY = "dummy_api_key"
+        if self.logdict["DEEPL_API_KEY"] is not None:
+            self.DEEPL_API_KEY = self.logdict["DEEPL_API_KEY"]
+        else:
+            self.DEEPL_API_KEY = "dummy_api_key"
         self.translator = deepl.Translator(self.DEEPL_API_KEY)  # この段階ではダミーのAPIキーを入れたインスタンスにしておくが、メニューバーにてAPIを入力した時点でインスタンスを更新する。ダミーのままだった時APIキーが異なるエラーメッセージを受け取る
 
         # マイクストリームインスタンス
@@ -685,6 +703,13 @@ class Tk():
 
     def _force_exit(self):
         print("[x] is pressed.")
+        # 設定をapplogとして残す
+        self.logdict["DEEPL_API_KEY"] = self.DEEPL_API_KEY
+        self.logdict["gs_api_key_filepath"] = os.environ['GOOGLE_APPLICATION_CREDENTIALS']
+        self.logdict["device_index"] = self.radio_val.get()
+        with open("applog.yaml", "w") as yf:
+            yaml.dump(self.logdict, yf, default_flow_style=False)
+
         if self.Process is not None:  # threadが開始していたら
             self.force_exit_flg = True  # thread側で処理を終わらせる
             mb.showinfo("Exit", "Finalizing...")  # メッセージボックスを出している間にthreadを終わらせる
@@ -737,14 +762,27 @@ class Tk():
         print(self.filename)
 
     def _ask_gs_api_key(self, event=None):
-        gs_api_key_filepath = filedialog.askopenfilename(
-            title="Select Google speech API Key (.json)",
-            initialdir="./",
-            filetypes=[("Json", ".json")]
-        )
-        print(gs_api_key_filepath)
-        # デスクトップに置いて実験。日本語がパスに含まれても大丈夫。
-        os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = gs_api_key_filepath
+        if self.logdict["gs_api_key_filepath"] is None:
+            # applogに無いので選択させる
+            gs_api_key_filepath = filedialog.askopenfilename(
+                title="Select Google speech API Key (.json)",
+                initialdir="./",
+                filetypes=[("Json", ".json")]
+            )
+        else:
+            # applogに有ったのでデフォルトディレクトリとファイルを入れておく
+            gs_api_key_filepath = filedialog.askopenfilename(
+                title="Select Google speech API Key (.json)",
+                initialdir=os.path.dirname(self.logdict["gs_api_key_filepath"]),
+                initialfile=os.path.basename(self.logdict["gs_api_key_filepath"]),
+                filetypes=[("Json", ".json")]
+            )
+        print("askopenfilename", gs_api_key_filepath)
+        if gs_api_key_filepath == "":
+            print("askopenfilename cancel")
+        else:
+            # デスクトップに置いて実験。日本語がパスに含まれても大丈夫。
+            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = gs_api_key_filepath
         return 0
 
     def _write_mgs(self, event):
@@ -770,7 +808,10 @@ class Tk():
         print("メニューバーがクリックされた")
 
     def _ask_deepl_api_key(self, event=None):
-        key = simpledialog.askstring("Input Box", "Enter DeepL API key \n\n (例. 3c9*****-***-***-***-*********29b:fx)",)
+        key = simpledialog.askstring(
+            "Input Box",
+            "Enter DeepL API key \n\n (例. 3c9*****-***-***-***-*********29b:fx)",
+            initialvalue=self.DEEPL_API_KEY)
         print("simpledialog", key)
         if key:
             self.DEEPL_API_KEY = key
@@ -882,7 +923,11 @@ class Tk():
         menu_api.bind_all("<Control-g>", self._ask_gs_api_key)
         menu_api.bind_all("<Control-d>", self._ask_deepl_api_key)
         # メニューバー/入力
-        self.radio_val = tk.IntVar()
+        if self.logdict["device_index"] is not None:
+            # applogが有ったのでデフォルトデバイスindexとして使用
+            self.radio_val = tk.IntVar(value=self.logdict["device_index"])
+        else:
+            self.radio_val = tk.IntVar()
         menu_src = tk.Menu(menubar, tearoff=False)
         for device_name in self.audio_devices:
             menu_src.add_radiobutton(label=device_name,
@@ -910,8 +955,6 @@ class Tk():
         # TODO: 順番通りボタンを選択していないとエラーポップアップを出す
         # MEMO: __init__からSTREAMING_LIMIT4分経つと、少なくとも最初の認識でいったん閉じるようだ。でまたNEW REQから始まる。どう扱うか→4分ずつNEW REQになるが続けられる。直前の分が少し重複するが無視できるだろう。
         # MEMO: stackした時の再開ボタン。リフレッシュボタン→スタック中なら効く。正常継続中では直前の文がそれなりに重複して出る。スタックリフレッシュとでもするか。
-        # TODO: 前回セッションのログがあれば設定をリジューム
-        # TODO: ボタンを画像にするか否か
         # MEMO: URLに込めてwebに飛ばすと、文章を音読してくれる。
         # https://www.deepl.com/translator#en/zh/I%20don't%20see%20the%20name%20of%20the%20new%20employee%20yet%2C%20but%20do%20you%20need%20me%20to%20take%20action%3F%20They%20do%20have%20a%20WOVEN%20account.
         # %20 = 半角スペース
